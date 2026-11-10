@@ -1,8 +1,8 @@
 ---
 name: tinker-ai-skill
-description: Turn your own coding-agent session transcripts (Claude Code JSONL) into a supervised fine-tuning dataset and train a LoRA on Tinker with the tinker-cookbook. Use when the user wants to fine-tune a model on their agent sessions, build an SFT dataset from transcripts, anonymize or de-identify transcripts, slice long sessions to a context length with compaction context, or train and evaluate on Tinker. Covers collection, cleaning (secrets, PII, paths), chunking, train/val splits, training, sampling, and the pitfalls that cost us runs.
+description: Turn your own coding-agent session transcripts (Claude Code JSONL) into a supervised fine-tuning dataset and train a LoRA on Tinker with the tinker-cookbook. Use when the user wants to fine-tune a model on their agent sessions, build an SFT dataset from transcripts, anonymize or de-identify transcripts, slice long sessions to a context length with compaction context, train and evaluate on Tinker, or export a Tinker LoRA to a merged model or GGUF and run it locally. Covers collection, cleaning (secrets, PII, paths), chunking, train/val splits, training, sampling, downloading and merging the LoRA, GGUF conversion and serving with llama.cpp, and the pitfalls that cost us runs.
 license: MIT
-compatibility: Python 3.11+, uv or pip, tinker-cookbook>=0.6.0 (installs tinker, torch, tml-renderers), a Tinker API key, optionally a Weights & Biases API key. Scripts run from the skill directory; dataset steps are offline, training and sampling call the Tinker service and cost money.
+compatibility: Python 3.11+, uv or pip, tinker-cookbook>=0.6.0 (installs tinker, torch, tml-renderers), a Tinker API key, optionally a Weights & Biases API key; for steps 8-9 a built llama.cpp checkout. Scripts run from the skill directory; dataset steps are offline, training, sampling and export call the Tinker service and cost money.
 metadata:
   author: Migel Tissera
   version: "1.0.0"
@@ -184,7 +184,7 @@ tool before trusting it, then benchmark against a same-recipe base GGUF.
   kept it, and never with llama.cpp's default min-p: match the template kwarg and the
   base model's sampling defaults.
 - Never put data, `.env`, run or export directories in a public repo: the pack's
-  `.gitignore` covers `data/`, `runs/`, `export/`, `wandb/`, `.env`.
+  `.gitignore` covers `data/`, `demo-*/`, `runs/`, `export/`, `wandb/`, `.env` and `identity.json`.
 
 ## Adapting to other agents
 

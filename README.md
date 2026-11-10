@@ -187,7 +187,7 @@ identity.example.json, .env.example
 
 ## Data safety
 
-`data/`, `demo-*/`, `runs/`, `export/`, `wandb/` and `.env` are git-ignored. The anonymizer
+`data/`, `demo-*/`, `runs/`, `export/`, `wandb/`, `.env` and `identity.json` are git-ignored. The anonymizer
 fails rather than writing a file that still leaks. Review anonymized rows before
 training, and never publish a dataset built from transcripts that belong to someone
 else without their consent.

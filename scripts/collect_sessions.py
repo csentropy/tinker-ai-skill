@@ -75,11 +75,10 @@ def main():
     out = args.data_dir / "originals"
     out.mkdir(parents=True, exist_ok=True)
     selected, skipped = [], Counter()
+    # <slug>/<session>.jsonl only: subagent transcripts live one level deeper
+    # (<slug>/<session>/subagents/*.jsonl) and are never matched by this glob.
     for path in sorted(args.claude_dir.glob("*/*.jsonl")):
         slug = path.parent.name
-        if "/subagents/" in str(path):
-            skipped["subagent"] += 1
-            continue
         if args.project and not any(p in slug for p in args.project):
             skipped["project_filter"] += 1
             continue
@@ -99,9 +98,10 @@ def main():
         target = out / slug / path.name
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(path, target)
+        size = target.stat().st_size
         selected.append({**info, "slug": slug, "file": str(target.relative_to(out)),
-                         "bytes": target.stat().st_size, "sha256": sha256_file(target)})
-        print(f"copied {slug}/{path.name}  assistant={info['assistant_records']}  {info['bytes'] if 'bytes' in info else target.stat().st_size:,} bytes", flush=True)
+                         "bytes": size, "sha256": sha256_file(target)})
+        print(f"copied {slug}/{path.name}  assistant={info['assistant_records']}  {size:,} bytes", flush=True)
 
     write_json(out / "manifest.json", {"source": str(args.claude_dir), "sessions": selected,
                                        "skipped": dict(skipped), "min_assistant": args.min_assistant})

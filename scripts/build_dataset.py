@@ -335,10 +335,10 @@ class SessionBuilder:
         window = self.b.raw_window - overhead
         if window < self.b.floor:
             raise ValueError(f"system prompt + tools leave too little room ({window} tokens) in {header['session_id']}")
+        pref = [0.0]                              # prefix sums of the per-message estimate
+        for m in M:
+            pref.append(pref[-1] + self.b.est_message(m))
         while True:
-            pref = [0.0]
-            for m in M:
-                pref.append(pref[-1] + self.b.est_message(m))
             chunks, sizes = self.render_ranges(M, header, pack(M, pref, window))
             if all(n <= self.b.max_len for n, _ in sizes):
                 break
@@ -354,7 +354,7 @@ class SessionBuilder:
 
 def val_split(sizes, val_frac):
     """Whole sessions, seeded-hash order, filled up to val_frac of the corpus by size."""
-    total, target = sum(sizes.values()), sum(sizes.values()) * val_frac
+    target = sum(sizes.values()) * val_frac
     order = sorted(sizes, key=lambda s: hashlib.sha256((SPLIT_SEED + s).encode()).hexdigest())
     val, acc = set(), 0
     for s in order:

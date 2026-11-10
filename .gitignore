@@ -4,6 +4,7 @@ runs/
 export/
 wandb/
 .env
+identity.json
 .venv/
 __pycache__/
 *.pyc
