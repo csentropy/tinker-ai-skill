@@ -79,6 +79,9 @@ def record_events(record, stats):
     if not isinstance(content, list):
         return
     uid = record.get("uuid")
+    # Claude Code writes one record per content block; the blocks of one model
+    # response share message.id, which is how late parallel tool calls are regrouped.
+    mid = (record.get("message") or {}).get("id") if kind == "assistant" else None
     for index, block in enumerate(content):
         if not isinstance(block, dict):
             continue
@@ -108,7 +111,7 @@ def record_events(record, stats):
                 continue
             yield {"role": "tool_call", "name": block.get("name") or "unknown",
                    "arguments": block.get("input") if isinstance(block.get("input"), dict) else {"input": block.get("input")},
-                   "id": block["id"], "key": key}
+                   "id": block["id"], "key": key, "mid": mid}
         elif bt == "tool_result":
             call_id = block.get("tool_use_id")
             if not isinstance(call_id, str):
@@ -143,11 +146,18 @@ def pair_tool_events(events, stats):
 
 def to_messages(events, head, tail, stats):
     """Event stream -> messages. One assistant message per step: a step is the run
-    of thinking / text / tool-call events between observations or user turns."""
+    of thinking / text / tool-call events between observations or user turns.
+
+    Parallel tool calls need care: results are logged as each tool finishes, so a
+    fast tool's result can precede a later tool_use block of the SAME response
+    (call A, call B, result B, call C, result C, result A). Such a late call is
+    attached to the assistant message already emitted instead of opening a new
+    step, which would leave call A looking unanswered."""
     msgs, cur = [], None
+    last = None        # assistant message emitted last: {"msg", "mid", "pending" call ids}
 
     def flush():
-        nonlocal cur
+        nonlocal cur, last
         if cur is None:
             return
         parts = []
@@ -160,12 +170,13 @@ def to_messages(events, head, tail, stats):
             if cur["tool_calls"]:
                 m["tool_calls"] = cur["tool_calls"]
             msgs.append(m)
+            last = {"msg": m, "mid": cur["mid"], "pending": {tc["id"] for tc in cur["tool_calls"]}}
         cur = None
 
     def open_step():
         nonlocal cur
         if cur is None:
-            cur = {"thinking": [], "text": [], "tool_calls": []}
+            cur = {"thinking": [], "text": [], "tool_calls": [], "mid": None}
 
     for e in events:
         role = e["role"]
@@ -175,18 +186,28 @@ def to_messages(events, head, tail, stats):
             open_step()
             cur["thinking" if role == "thinking" else "text"].append(e["text"])
         elif role == "tool_call":
-            open_step()
-            cur["tool_calls"].append({"id": e["id"], "type": "function",
-                                      "function": {"name": e["name"],
-                                                   "arguments": json.dumps(e["arguments"], ensure_ascii=False)}})
+            call = {"id": e["id"], "type": "function",
+                    "function": {"name": e["name"], "arguments": json.dumps(e["arguments"], ensure_ascii=False)}}
+            same_response = bool(e.get("mid")) and last is not None and e["mid"] == last["mid"]
+            if cur is None and last is not None and last["msg"].get("tool_calls") and (last["pending"] or same_response):
+                last["msg"]["tool_calls"].append(call)      # late block of the same response
+                last["pending"].add(e["id"])
+                stats["late_parallel_tool_calls_regrouped"] += 1
+            else:
+                open_step()
+                cur["tool_calls"].append(call)
+                cur["mid"] = e.get("mid")
         elif role == "tool_result":
             flush()
+            if last is not None:
+                last["pending"].discard(e["id"])
             text = e["text"]
             if len(text) > head + tail + 200:
                 stats["tool_results_clipped"] += 1
             msgs.append({"role": "tool", "content": clip_middle(text, head, tail), "tool_call_id": e["id"]})
         elif role == "user":
             flush()
+            last = None                      # a user turn closes the assistant turn
             text = e["text"]
             if text == "[image omitted]" and (not msgs or msgs[-1]["role"] != "user"):
                 stats["image_only_user_messages_dropped"] += 1
@@ -273,7 +294,7 @@ def main():
 
     src = args.data_dir / "originals"
     out = args.data_dir / "normalized"
-    files = sorted(p for p in src.glob("*/*.jsonl") if "/subagents/" not in str(p))
+    files = sorted(src.glob("*/*.jsonl"))
     if not files:
         sys.exit(f"no transcripts under {src}; run collect_sessions.py first")
     out.mkdir(parents=True, exist_ok=True)
