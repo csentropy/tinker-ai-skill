@@ -20,12 +20,13 @@
 #               models ship an MTP head; serve it with --spec-type draft-mtp)
 #   SPLIT_MAX_SIZE=45G  split outputs for HuggingFace's 50 GB file limit
 set -euo pipefail
+case "${1:-}" in -h|--help) sed -n '2,/^set -euo pipefail$/p' "$0" | sed '$d; s/^# \{0,1\}//'; exit 0 ;; esac
 
 MERGED="${1:?merged HF model dir}"
 OUT="${2:?output dir}"
 NAME="${3:?model name, e.g. my-coder-27b}"
-shift 3 || true
-QUANTS=("$@"); [ ${#QUANTS[@]} -eq 0 ] && QUANTS=(Q4_K_M)
+shift 3
+if [ $# -eq 0 ]; then QUANTS=(Q4_K_M); else QUANTS=("$@"); fi
 
 LLAMA_CPP="${LLAMA_CPP:-$HOME/src/llama.cpp}"
 PYTHON="${PYTHON:-python3}"
@@ -44,13 +45,15 @@ NO_MTP=(); [ "$HAS_MTP" = 1 ] && NO_MTP=(--no-mtp)
 
 FULL="$OUT/${NAME}-$(echo "$OUTTYPE" | tr '[:lower:]' '[:upper:]').gguf"
 echo ">> convert HF -> $OUTTYPE GGUF: $FULL"
+# ${ARR[@]+"${ARR[@]}"}: an empty array under `set -u` is an "unbound variable" error
+# before bash 4.4, and macOS still ships bash 3.2 as /bin/bash.
 PYTHONPATH="$LLAMA_CPP/gguf-py" "$PYTHON" "$CONVERT" "$MERGED" --outfile "$FULL" --outtype "$OUTTYPE" \
-  --model-name "$NAME" "${NO_MTP[@]}" "${SPLIT[@]}"
+  --model-name "$NAME" ${NO_MTP[@]+"${NO_MTP[@]}"} ${SPLIT[@]+"${SPLIT[@]}"}
 
 for q in "${QUANTS[@]}"; do
   echo ">> quantize -> $q"
   KEEP=(); [ -n "${SPLIT_MAX_SIZE:-}" ] && KEEP=(--keep-split)
-  "$QUANT" "${KEEP[@]}" "$FULL" "$OUT/${NAME}-${q}.gguf" "$q"
+  "$QUANT" ${KEEP[@]+"${KEEP[@]}"} "$FULL" "$OUT/${NAME}-${q}.gguf" "$q"
 done
 
 if [ "$HAS_VISION" = 1 ] && [ "${MMPROJ:-1}" != 0 ]; then
